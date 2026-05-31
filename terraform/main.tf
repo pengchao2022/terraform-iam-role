@@ -2,13 +2,8 @@ provider "aws" {
   region = var.aws_region
 }
 
-resource "aws_iam_openid_connect_provider" "github_actions" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-
-  lifecycle {
-    ignore_changes = all
-  }
+data "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 resource "aws_iam_role" "github_actions_role" {
@@ -20,7 +15,7 @@ resource "aws_iam_role" "github_actions_role" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github_actions.arn
+          Federated = data.aws_iam_openid_connect_provider.github_actions.arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
@@ -50,5 +45,5 @@ output "github_role_name" {
 }
 
 output "oidc_provider_arn" {
-  value = aws_iam_openid_connect_provider.github_actions.arn
+  value = data.aws_iam_openid_connect_provider.github_actions.arn
 }

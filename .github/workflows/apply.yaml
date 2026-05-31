@@ -1,0 +1,135 @@
+name: Deploy IAM Role for GitHub Actions OIDC
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  pull_request:
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:  
+    inputs:
+      environment:
+        description: 'Environment'
+        type: choice
+        options:
+          - dev
+          - prod
+        default: 'dev'
+
+permissions:
+  id-token: write
+  contents: read
+
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && 'prod' || 'dev' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./terraform
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan
+          echo "plan_exit_code=$?" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+        continue-on-error: false
+        env:
+          TF_VAR_github_repo_allow_list: ${{ vars.GITHUB_REPO_ALLOW_LIST }}
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: terraform/tfplan
+          retention-days: 7
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: terraform
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform
+        env:
+          TF_VAR_github_repo_allow_list: ${{ vars.GITHUB_REPO_ALLOW_LIST }}
+
+      - name: Get IAM Role ARN
+        id: get_arn
+        run: |
+          cd terraform
+          ARN=$(terraform output -raw github_role_arn)
+          echo "role_arn=$ARN" >> $GITHUB_OUTPUT
+          
+      - name: Output IAM Role Info
+        run: |
+          echo "✅ IAM Role 创建/更新成功！"
+          echo "Role ARN: ${{ steps.get_arn.outputs.role_arn }}"
+          echo "请在需要使用此角色的仓库中添加 Secret："
+          echo "  Name: AWS_ROLE_ARN"
+          echo "  Value: ${{ steps.get_arn.outputs.role_arn }}"
+
+      - name: Save ARN as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iam-role-output
+          path: |
+            terraform/terraform.tfstate
+            terraform/terraform.tfstate.backup
+          retention-days: 20

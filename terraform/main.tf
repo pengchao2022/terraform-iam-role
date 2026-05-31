@@ -5,6 +5,10 @@ provider "aws" {
 resource "aws_iam_openid_connect_provider" "github_actions" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 resource "aws_iam_role" "github_actions_role" {
@@ -24,7 +28,7 @@ resource "aws_iam_role" "github_actions_role" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:你的GitHub用户名/仓库名:*"
+            "token.actions.githubusercontent.com:sub" = "repo:pengchao2022/*"
           }
         }
       }

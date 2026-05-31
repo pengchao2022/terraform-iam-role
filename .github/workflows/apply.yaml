@@ -119,9 +119,9 @@ jobs:
           
       - name: Output IAM Role Info
         run: |
-          echo "✅ IAM Role 创建/更新成功！"
+          echo "✅ IAM Role successfully created!"
           echo "Role ARN: ${{ steps.get_arn.outputs.role_arn }}"
-          echo "请在需要使用此角色的仓库中添加 Secret："
+          echo "Please add this role to the GitHub Secret:"
           echo "  Name: AWS_ROLE_ARN"
           echo "  Value: ${{ steps.get_arn.outputs.role_arn }}"
 
